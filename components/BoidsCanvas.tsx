@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
+import { SoundEngine } from "@/lib/soundEngine";
 
 interface Boid {
   x: number;
@@ -120,6 +121,10 @@ export default function BoidsCanvas() {
   const endingVerseRef = useRef<string[]>(ENDING_VERSES[0]);
   const blackPauseRef = useRef(0);
   const [phase, setPhase] = useState<Phase>("running");
+  const soundRef = useRef(new SoundEngine());
+  const hasStartedRef = useRef(false);
+  const [showStart, setShowStart] = useState(true);
+  const [startFading, setStartFading] = useState(false);
 
   const initBoids = useCallback((w: number, h: number) => {
     const boids: Boid[] = [];
@@ -260,6 +265,7 @@ export default function BoidsCanvas() {
         particlesRef.current.push(...particles);
         respawnQueueRef.current.push({ timer: RESPAWN_DELAY + Math.random() * 120, layer: b.layer });
         boids.splice(hitIdx, 1);
+        soundRef.current.playWordBurst();
       }
     };
 
@@ -289,7 +295,9 @@ export default function BoidsCanvas() {
       const boids = boidsRef.current;
       const mouse = mouseRef.current;
       timeRef.current += 0.005;
-      frameRef.current += 1;
+      if (hasStartedRef.current) {
+        frameRef.current += 1;
+      }
 
       const elapsedSec = frameRef.current / 60;
       const currentPhase = phaseRef.current;
@@ -306,6 +314,7 @@ export default function BoidsCanvas() {
         respawnQueueRef.current.length = 0;
         flashAlphaRef.current = 1;
         glyphFadeRef.current = 1;
+        soundRef.current.triggerExplosion();
         return;
       }
 
@@ -340,6 +349,7 @@ export default function BoidsCanvas() {
           phaseRef.current = "ending";
           setPhase("ending");
           endTextAlphaRef.current = 0;
+          soundRef.current.playEndingTone();
         }
         return;
       }
@@ -359,6 +369,8 @@ export default function BoidsCanvas() {
       const madness = elapsedSec >= RAMP_START
         ? Math.min((elapsedSec - RAMP_START) / (TOTAL_DURATION - RAMP_START), 1)
         : 0;
+
+      soundRef.current.updateMadness(madness);
 
       const speedMultiplier = 1 + madness * 4;
       const changeMultiplier = 1 + madness * 6;
@@ -723,10 +735,19 @@ export default function BoidsCanvas() {
       window.removeEventListener("mouseleave", handleMouseLeave);
       window.removeEventListener("click", handleClick);
       cancelAnimationFrame(animRef.current);
+      soundRef.current.reset();
     };
   }, [initBoids, generateGlyph]);
 
+  const handleStart = useCallback(() => {
+    soundRef.current.start();
+    hasStartedRef.current = true;
+    setStartFading(true);
+    setTimeout(() => setShowStart(false), 1500);
+  }, []);
+
   const handleRestart = () => {
+    soundRef.current.reset();
     boidsRef.current = [];
     particlesRef.current = [];
     respawnQueueRef.current = [];
@@ -750,12 +771,53 @@ export default function BoidsCanvas() {
     }
     initBoids(window.innerWidth, window.innerHeight);
     generateGlyph(window.innerWidth, window.innerHeight);
+    soundRef.current.start();
   };
 
   return (
     <main style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden" }}>
       <canvas ref={canvasRef} />
       <CursorFollower />
+      {showStart && (
+        <div
+          onClick={handleStart}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: startFading ? "rgba(5, 5, 5, 0)" : "rgba(5, 5, 5, 0.97)",
+            zIndex: 50,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            transition: "background 1.5s ease",
+            pointerEvents: startFading ? "none" : "auto",
+          }}
+        >
+          <div style={{
+            color: "rgba(200, 180, 160, 0.6)",
+            fontSize: "18px",
+            fontFamily: '"PingFang SC", "Microsoft YaHei", sans-serif',
+            letterSpacing: "6px",
+            animation: "breathe 3s ease-in-out infinite",
+            opacity: startFading ? 0 : 1,
+            transition: "opacity 0.5s ease",
+          }}>
+            点击进入
+          </div>
+          <div style={{
+            color: "rgba(200, 180, 160, 0.3)",
+            fontSize: "13px",
+            marginTop: "16px",
+            fontFamily: '"PingFang SC", "Microsoft YaHei", sans-serif',
+            opacity: startFading ? 0 : 1,
+            transition: "opacity 0.5s ease",
+          }}>
+            ♪ 建议佩戴耳机
+          </div>
+        </div>
+      )}
       {phase === "ended" && (
         <div style={{
           position: "fixed",
